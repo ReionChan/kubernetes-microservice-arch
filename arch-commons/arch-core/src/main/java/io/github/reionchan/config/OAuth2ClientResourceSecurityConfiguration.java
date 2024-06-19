@@ -51,7 +51,7 @@ public class OAuth2ClientResourceSecurityConfiguration {
                     .accessDeniedHandler(GlobalExceptionHandler::handleAuthException)
                     .authenticationEntryPoint(GlobalExceptionHandler::handleAuthException))
                 .authorizeHttpRequests(httpReq ->
-                    httpReq.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**",
+                    httpReq.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/refresh",
                         "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     .anyRequest().authenticated());
         return http.build();

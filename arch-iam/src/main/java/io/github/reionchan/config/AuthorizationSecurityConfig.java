@@ -115,7 +115,8 @@ public class AuthorizationSecurityConfig {
                     .authenticationEntryPoint(GlobalExceptionHandler::handleAuthException))
             .authorizeHttpRequests((authorize) -> authorize
                     .requestMatchers(endpointsMatcher).permitAll()
-                    .requestMatchers("/actuator/health", "/actuator/health/**","/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                    .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/refresh",
+                            "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     .anyRequest().authenticated())
             .with(serverConfigurer, cfg -> cfg.tokenGenerator(delegatingOAuth2TokenGenerator));
         http.userDetailsService(userDetailsService);

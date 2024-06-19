@@ -1,0 +1,33 @@
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: arch-k-s
+build:
+  local:
+    concurrency: 1
+  artifacts:
+    - image: docker.io/reion78/arch-iam
+      context: ./
+      docker:
+        dockerfile: ./dockerfile/arch-iam/Dockerfile
+    - image: docker.io/reion78/arch-users
+      context: ./
+      docker:
+        dockerfile: ./dockerfile/arch-users/Dockerfile
+    - image: docker.io/reion78/arch-app
+      context: ./
+      docker:
+        dockerfile: ./dockerfile/arch-app/Dockerfile
+    - image: docker.io/reion78/arch-gateway
+      context: ./
+      docker:
+        dockerfile: ./dockerfile/arch-gateway/Dockerfile
+
+manifests:
+  rawYaml:
+    - k8s/*.yml
+portForward:
+  - resourceType: service
+    namespace: arch-namespace
+    resourceName: arch-gateway
+    port: 9000
