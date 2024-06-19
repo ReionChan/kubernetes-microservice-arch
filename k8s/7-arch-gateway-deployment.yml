@@ -1,0 +1,244 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: arch-gateway
+  namespace: arch-namespace
+  labels:
+    spring.cloud.kubernetes.secret: "true"
+  annotations:
+    spring.cloud.kubernetes.configmap.apps: "arch-gateway"
+
+data:
+  OAUTH2_CLIENT_SECRET: c2VjcmV0Z2F0ZXdheQ==
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arch-gateway
+  namespace: arch-namespace
+  labels:
+    spring.cloud.kubernetes.config: "true"
+  annotations:
+    spring.cloud.kubernetes.configmap.apps: "arch-gateway"
+data:
+  arch-gateway-kubernetes.yml: |-
+    server:
+      port: 9000
+      shutdown: graceful
+      #  http2:
+      #    enabled: true
+      #  jetty:
+      #    threads:
+      #      max: 200
+      #      min: 4
+      #      acceptors: 1
+      #      selectors: 1
+      #    max-connections: 400
+    
+    spring:
+      task:
+        scheduling:
+          thread-name-prefix: "arch-scheduling-"
+          pool:
+            size: 3
+      # Security 默认用户设置
+      security:
+        oauth2:
+          client:
+            registration:
+              ArchIAM:
+                provider: ArchIAM
+                client-id: ${spring.application.name}
+                client-name: ${spring.application.name}
+                authorization-grant-type: client_credentials
+                client-authentication-method: client_secret_basic
+                scope: [ SERVICE ]
+            provider:
+              ArchIAM:
+                authorizationUri: ${ISSUE_ADDR:http://localhost:9090}/oauth2/authorize
+                token-uri: ${ISSUE_ADDR:http://localhost:9090}/oauth2/token
+                jwk-set-uri: ${ISSUE_ADDR:http://localhost:9090}/oauth2/jwks
+                user-info-uri: ${ISSUE_ADDR:http://localhost:9090}/userinfo
+      cloud:
+        # k8s 配置
+        kubernetes:
+          discovery:
+            namespaces:
+              - arch-namespace
+            catalogServicesWatchDelay: 5000
+            primary-port-name: http
+        gateway:
+          globalcors:
+            corsConfigurations:
+              '[/**]':
+                # 允许跨域访问
+                allowedOrigins: "*"
+                # 允许跨域访问的请求方法
+                allowedMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD"
+                # 允许跨域访问的请求头
+                allowedHeaders: "*"
+                # 允许跨域访问的响应头
+                exposedHeaders: "*"
+                # 允许跨域访问的请求凭证
+                # 发生跨域时是否允许浏览器携带用户状态信息，例如：cookies、http认证信息等
+                allowCredentials: false
+                maxAge: 1800
+          discovery:
+            locator:
+              # 开启网关与服务发现集成
+              enabled: true
+          # 路由规则
+          routes:
+            # 将以 /v3/api-docs/serviceId 路径，路由到 /serviceId/v3/api-docs
+            - id: springdoc-route
+              uri: http://localhost:${server.port}
+              predicates:
+                - Path=/v3/api-docs/**
+              filters:
+                - RewritePath=/v3/api-docs/(?<path>.*), /$\{path}/v3/api-docs
+    
+    # === SpringDoc ===
+    springdoc:
+      version: "@project.version@"
+      # api 文档设置
+      api-docs:
+        version: openapi_3_1
+        # 文档路径，默认 /v3/api-docs
+        path: /v3/api-docs
+      # swagger 文档设置
+      swagger-ui:
+        # 文档路径，默认 /swagger-ui.html
+        path: /swagger-ui.html
+        # 设置不同服务的文档显示名称及链接地址
+        urls:
+          # users 服务文档地址
+          - name: arch-users
+            url: /v3/api-docs/arch-users
+          # products 服务文档地址
+          - name: arch-app
+            url: /v3/api-docs/arch-app
+          # orders 服务文档地址
+          - name: arch-iam
+            url: /v3/api-docs/arch-iam
+        # 设置接口方法按字母排序
+        operations-sorter: alpha
+        # 设置接口标签按字母排序
+        tags-sorter: alpha
+    
+    # 日志配置
+    logging:
+      pattern:
+        console: "%clr(%d{HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(-){faint} %clr([%t]){faint} %clr(%-40logger{39}){cyan}[%line]%clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"
+      level:
+        org.springframework.cloud: info
+    
+    # 展示指标端点
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health, refresh, circuitbreakers
+      endpoint:
+        health:
+          probes:
+            enabled: true
+        refresh:
+          enabled: true
+      health:
+        livenessstate:
+          enabled: true
+        readinessstate:
+          enabled: true
+
+  arch-gateway-dev.yml: |-
+    logging:
+      pattern:
+        console: "%clr(%d{HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(-){faint} %clr([%t]){faint} %clr(%-40logger{39}){cyan}[%line]%clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"
+      level:
+        org.springframework.cloud: info
+        io.github.reionchan.rpc.feign: debug
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: arch-gateway-deployment
+  name: arch-gateway-deployment
+  namespace: arch-namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arch-gateway
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: arch-gateway
+    spec:
+      serviceAccountName: arch-admin
+      containers:
+        - image: docker.io/reion78/arch-gateway:1.0_k8s
+          name: arch-gateway
+          ports:
+            - containerPort: 9000
+              name: http
+          readinessProbe:
+            httpGet:
+              port: 9000
+              path: /actuator/health/readiness
+            initialDelaySeconds: 60
+            timeoutSeconds: 30
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              port: 9000
+              path: /actuator/health/liveness
+            initialDelaySeconds: 90
+            timeoutSeconds: 30
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          # 优雅停机
+          lifecycle:
+            preStop:
+              exec:
+                command: [ "sh", "-c", "sleep 10" ]
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: arch-gateway
+            - name: spring.security.oauth2.client.registration.ArchIAM.client-secret
+              valueFrom:
+                secretKeyRef:
+                  name: arch-gateway
+                  key: OAUTH2_CLIENT_SECRET
+          envFrom:
+            - configMapRef:
+                name: arch-app-common-env-configmap
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: arch-gateway
+  namespace: arch-namespace
+  labels:
+    app: arch-gateway
+    primary-port-name: http
+spec:
+  ports:
+    - port: 9000
+      name: http
+      targetPort: 9000
+      nodePort: 30000
+  selector:
+    app: arch-gateway
+  type: NodePort
+  sessionAffinity: None

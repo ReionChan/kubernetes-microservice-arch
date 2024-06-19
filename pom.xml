@@ -9,7 +9,7 @@
     <version>1.0</version>
     <packaging>pom</packaging>
     <description>
-        基于『Spring Cloud 框架🍃』编程式👨‍💻‍、非云原生⛔️💭 的骨架🍖
+        基于『Spring Cloud 🍃 + Kubernetes』云原生💭 的微服务骨架🍖
     </description>
 
     <modules>
@@ -100,13 +100,6 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring.boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.alibaba.cloud</groupId>
-                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
-                <version>${spring.cloud.alibaba.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

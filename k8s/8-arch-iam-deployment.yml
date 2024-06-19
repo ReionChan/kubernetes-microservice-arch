@@ -1,0 +1,326 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: arch-iam
+  namespace: arch-namespace
+  labels:
+    spring.cloud.kubernetes.secret: "true"
+  annotations:
+    spring.cloud.kubernetes.configmap.apps: "arch-iam"
+data:
+  OAUTH2_CLIENT_SECRET: c2VjcmV0aWFt
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arch-iam
+  namespace: arch-namespace
+  labels:
+    spring.cloud.kubernetes.config: "true"
+  annotations:
+    spring.cloud.kubernetes.configmap.apps: "arch-iam"
+data:
+  arch-iam-kubernetes.yml: |-
+    server:
+      port: 9090
+      shutdown: graceful
+    spring:
+      jackson:
+        # 日期格式
+        date-format: yyyy-MM-dd HH:mm:ss
+        # 时区
+        time-zone: GMT+8
+        # 忽略 null 的属性值
+        default-property-inclusion: NON_NULL
+      # 缓存配置
+      cache:
+        # 启用自动化装配的 caffeine 本地缓存
+        type: caffeine
+        caffeine:
+          # 默认容量为 128 最大 10000 且缓存过期时间 30s 的本地缓存
+          spec: initialCapacity=128,maximumSize=10000,expireAfterWrite=30s
+      # 调度器线程池
+      task:
+        scheduling:
+          thread-name-prefix: "arch-scheduling-"
+          pool:
+            size: 3
+      # Security 默认用户设置
+      security:
+        oauth2:
+          authorizationserver:
+            issuer: ${ISSUE_ADDR:http://localhost:9000/arch-iam}
+            # OAuth2 客户端注册信息，生产环境可切换成基于数据库的配置模式
+            client:
+              # 本方网页端用户使用 Web 端登录时，由于是自身系统，使用已被 OAuth2.1 弃用的密码模式（例如：Vue）
+              # 网页客户端，代替用户提交密码进行认证（1. 网页客户端自身认证 2.认证后再进行用户密码模式认证 3.获得用户的访问令牌、刷新令牌）
+              arch-web:
+                token:
+                  refresh-token-time-to-live: P1D
+                registration:
+                  client-id: arch-web
+                  client-name: arch-web
+                  # secretweb
+                  client-secret: $2a$10$ueyW3xrcU4fV05A0t3lC0.KWmYYEAnQknz3A64vfBr0Rwyc/etHsW
+                  client-authentication-methods: [ client_secret_post, client_secret_basic ]
+                  # 一方登录提供密码模式、刷新令牌
+                  authorization-grant-types: [ client_credentials, password, refresh_token]
+                  scopes: [ WEB ]
+              arch-app:
+                token:
+                  access-token-time-to-live: P1D
+                registration:
+                  client-id: arch-app
+                  client-name: arch-app
+                  # secret
+                  client-secret: $2a$10$XWY/JeWE1SpNQus1mCCJqeh93jrj.hjGDHqJwKLuEEBwv/s5Xylm2
+                  client-authentication-methods: [client_secret_post, client_secret_basic]
+                  authorization-grant-types: [client_credentials]
+                  scopes: [SERVICE]
+              arch-users:
+                token:
+                  access-token-time-to-live: P1D
+                registration:
+                  client-id: arch-users
+                  client-name: arch-users
+                  # secretusers
+                  client-secret: $2a$10$2mbgP421pk.kLvbEeyZNKOFhIewdVfg/9dSkIl34ROkfXu./xi0/O
+                  client-authentication-methods: [ client_secret_post, client_secret_basic ]
+                  authorization-grant-types: [ client_credentials ]
+                  scopes: [ SERVICE ]
+              arch-iam:
+                token:
+                  access-token-time-to-live: P1D
+                registration:
+                  client-id: ${spring.application.name}
+                  client-name: ${spring.application.name}
+                  # secretiam
+                  client-secret: $2a$10$b7VN/WDZLSiZKmQKwVJBweiOVaJDiT52Jm35KXoVSouFEbtTg7tIe
+                  client-authentication-methods: [ client_secret_post, client_secret_basic ]
+                  authorization-grant-types: [ client_credentials ]
+                  scopes: [ SERVICE ]
+          # 客户端
+          client:
+            registration:
+              ArchIAM:
+                provider: ArchIAM
+                client-id: ${spring.application.name}
+                client-name: ${spring.application.name}
+                authorization-grant-type: client_credentials
+                client-authentication-method: client_secret_basic
+                scope: [ SERVICE ]
+            provider:
+              ArchIAM:
+                # 设置 issuer-uri，让客户端启动时像此授权中心动态获取 OAuth2 和 OIDC 周知端点 URL
+                #issuer-uri: ${ISSUE_ADDR:http://localhost:9000/arch-iam}
+                
+                # 不使用签发地址进行解析时，手动指定如下四个周知端点 URL
+                authorizationUri: ${ISSUE_ADDR:http://localhost:9000/arch-iam}/oauth2/authorize
+                token-uri: ${ISSUE_ADDR:http://localhost:9000/arch-iam}/oauth2/token
+                jwk-set-uri: ${ISSUE_ADDR:http://localhost:9000/arch-iam}/oauth2/jwks
+                user-info-uri: ${ISSUE_ADDR:http://localhost:9000/arch-iam}/userinfo
+          # 资源服务器
+          resourceserver:
+            jwt:
+              # 使用网络获取认证服务器公钥
+              #issuer-uri: ${ISSUE_ADDR:http://localhost:9000/arch-iam}
+              
+              # 不使用签发地址进行解析时，指定本地保存的签发服务器公钥地址
+              #   优点：离线将授权服务器的公钥拷贝到本地，无需依赖网络访问
+              #   缺点：授权服务器公钥变更没法自动获取
+              public-key-location: classpath:arch-iam/public.pem
+      cloud:
+        # k8s 配置
+        kubernetes:
+          discovery:
+            namespaces: [ "arch-namespace" ]
+            catalogServicesWatchDelay: 5000
+            primary-port-name: http
+        # RPC 调用
+        openfeign:
+          client:
+            default-config: default
+            config:
+              default:
+                logger-level: basic
+          # 激活 Feign 请求客户端 okhttp
+          okhttp:
+            enabled: true
+          # 激活 Feign 追加请求头 OAuth2 令牌
+          oauth2:
+            enabled: true
+            clientRegistrationId: ArchIAM
+          # 激活 Feign 调用熔断机制（基于下方 Resilience4J 配置）
+          circuitbreaker:
+            enabled: true
+        # 熔断配置
+        circuitbreaker:
+          resilience4j:
+            # 开启基于信号量的隔板
+            enableSemaphoreDefaultBulkhead: true
+    resilience4j:
+      # 熔断器
+      circuitbreaker:
+        configs:
+          # 基于计数形式的默认熔断器
+          default:
+            slidingWindowSize: 100
+            minimum-number-of-calls: 100
+            failure-rate-threshold: 50
+            slow-call-rate-threshold: 90
+            slow-call-duration-threshold: PT20S
+            sliding-window-type: count_based
+            max-wait-duration-in-half-open-state: PT0S
+            permitted-number-of-calls-in-half-open-state: 10
+            wait-duration-in-open-state: PT60S
+            automatic-transition-from-open-to-half-open-enabled: false
+      # 时间限制器
+      timelimiter:
+        configs:
+          default:
+            timeout-duration: PT5S
+            cancel-running-future: true
+      # 隔板
+      bulkhead:
+        configs:
+          default:
+            max-concurrent-calls: 25
+            max-wait-duration: PT0S
+    # 日志配置
+    logging:
+      pattern:
+        console: "%clr(%d{HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(-){faint} %clr([%t]){faint} %clr(%-40logger{39}){cyan}[%line]%clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"
+      level:
+        org.springframework.security: info
+        io.github.reionchan.rpc.feign: debug
+    
+    # API 文档
+    springdoc:
+      version: "@project.version@"
+      api-docs:
+        version: openapi_3_1
+      # OAuth2 认证服务器开启端口显示
+      show-oauth2-endpoints: true
+      swagger-ui:
+        display-request-duration: true
+        groups-order: DESC
+        operationsSorter: method
+        disable-swagger-default-url: true
+        use-root-path: true
+        oauth:
+          client-id: arch-web
+          client-secret: secretweb
+      oAuthFlow:
+        authorizationUrl: ${ISSUE_ADDR:http://localhost:9000/arch-iam}/oauth2/authorize
+        tokenUrl: ${ISSUE_ADDR:http://localhost:9000/arch-iam}/oauth2/token
+      show-actuator: false
+      cache:
+        disabled: true
+    
+    # 展示指标端点
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,refresh,circuitbreakers
+      endpoint:
+        health:
+          probes:
+            enabled: true
+        refresh:
+          enabled: true
+      health:
+        livenessstate:
+          enabled: true
+        readinessstate:
+          enabled: true
+
+  arch-iam-dev.yml: |-
+    logging:
+      level:
+        org.springframework.security: info
+        io.github.reionchan.rpc.feign: debug
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: arch-iam-deployment
+  name: arch-iam-deployment
+  namespace: arch-namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arch-iam
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: arch-iam
+    spec:
+      serviceAccountName: arch-admin
+      containers:
+      - image: docker.io/reion78/arch-iam:1.0_k8s
+        name: arch-iam
+        ports:
+          - containerPort: 9090
+            name: http
+        readinessProbe:
+          httpGet:
+            port: 9090
+            path: /actuator/health/readiness
+          initialDelaySeconds: 60
+          timeoutSeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            port: 9090
+            path: /actuator/health/liveness
+          initialDelaySeconds: 90
+          timeoutSeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          failureThreshold: 3
+        # 优雅停机
+        lifecycle:
+          preStop:
+            exec:
+              command: [ "sh", "-c", "sleep 10" ]
+        env:
+          - name: OTEL_SERVICE_NAME
+            value: arch-iam
+          - name: spring.security.oauth2.client.registration.ArchIAM.client-secret
+            valueFrom:
+              secretKeyRef:
+                name: arch-iam
+                key: OAUTH2_CLIENT_SECRET
+        envFrom:
+          - configMapRef:
+              name: arch-app-common-env-configmap
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: arch-iam
+  namespace: arch-namespace
+  labels:
+    app: arch-iam
+    primary-port-name: http
+spec:
+  ports:
+    - port: 9090
+      name: http
+      targetPort: 9090
+  selector:
+    app: arch-iam
+  type: ClusterIP
+  sessionAffinity: None

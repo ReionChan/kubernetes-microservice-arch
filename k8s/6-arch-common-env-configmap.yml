@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arch-app-common-env-configmap
+  namespace: arch-namespace
+  labels:
+    spring.cloud.kubernetes.config: "true"
+  annotations:
+    spring.cloud.kubernetes.configmap.apps: "arch-gateway, arch-iam, arch-users, arch-app"
+data:
+  spring.output.ansi.enabled: "always"
+  PROFILES: "dev"
+  JAVA_OPTS: "-Duser.timezone=GMT+08 -Dfile.encoding=UTF-8 -javaagent:/opentelemetry-javaagent.jar"
+#  JAVA_OPTS: "-Duser.timezone=GMT+08 -Dfile.encoding=UTF-8"
+  ISSUE_ADDR: "http://arch-gateway:9000/arch-iam"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://arch-otel-col:4318"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_CONFIG_FILE: ""
+  management.otlp.metrics.export.enabled: "true"
+  management.tracing.enabled: "true"
